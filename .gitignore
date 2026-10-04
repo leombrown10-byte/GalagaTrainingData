@@ -1,0 +1,4 @@
+roms/
+*.dll
+.venv/
+__pycache__/
