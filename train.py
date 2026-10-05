@@ -110,7 +110,7 @@ class FastGalaga:
             if sys.platform == "win32" and shutil.which("cl"):  # MSVC, from a Developer Command Prompt
                 cmd = ["cl", "/nologo", "/O2", "/LD", str(src), f"/Fe:{lib}", f"/Fo:{HERE}\\"]
             else:  # clang, Apple's cc, or MinGW gcc on Windows
-                cmd = [next(c for c in ("cc", "gcc", "clang") if shutil.which(c)), "-O3", "-shared", "-fPIC", "-o", str(lib), str(src)]
+                cmd = [next(c for c in ("cc", "gcc", "clang") if shutil.which(c)), "-O3", "-march=native", "-fomit-frame-pointer", "-shared", "-fPIC", "-o", str(lib), str(src)]
             subprocess.run(cmd, check=True)
         self.lib = ctypes.CDLL(str(lib))
         self.lib.gx_init.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
@@ -141,7 +141,8 @@ class FastGalaga:
         info[k] = (hits, stage). Separate threads may step non-overlapping ranges at the same time."""
         hi = len(self.act) if hi is None else hi
         self.act[lo:hi] = actions
-        cuts = np.linspace(lo, hi, min(hi - lo, os.cpu_count()) + 1).astype(int)
+        # 3 chunks per thread, so fast P-cores pick up extra chunks instead of waiting on slow E-cores
+        cuts = np.linspace(lo, hi, min(hi - lo, 3 * os.cpu_count()) + 1).astype(int)
         list(self.pool.map(lambda a, b: self.lib.gx_step_range(int(a), int(b), *self.args), cuts[:-1], cuts[1:]))
         return self.obs[lo:hi].copy(), self.rew[lo:hi].copy(), self.done[lo:hi].astype(bool), self.info[lo:hi].copy()
 
@@ -214,6 +215,7 @@ def update(net, opt, b, dev, stats):
 
 def train():
     dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    torch.set_num_threads(1)  # the CPU actor is tiny; extra torch threads only fight the game threads
     print(f"learner on {dev}, games on {os.cpu_count()} CPU threads")
     net = Policy().to(dev)
     opt = torch.optim.Adam(net.parameters(), lr=LR, eps=1e-5)

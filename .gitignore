@@ -2,3 +2,8 @@ roms/
 *.dll
 .venv/
 __pycache__/
+checkpoints/
+bad/
+cfg/
+o.txt
+e.txt
